@@ -23,27 +23,6 @@ impl TheTrait for TheStruct {
     }
 }
 
-#[async_trait]
-impl<T> TheTrait for T where T: Service<TheTraitRequest, Response=TheTraitResponse> + Send, T::Error: Debug, T::Future: Send {
-    async fn bla(&mut self, value1: String, value2: SomeStruct) {
-        let response = self.call(TheTraitRequest::Bla { value1, value2 }).await.unwrap();
-        match response {
-            TheTraitResponse::Bla {} => (),
-            _ => panic!("Invalid response variant")
-        }
-    }
-
-    async fn blub(&mut self) -> SomeStruct {
-        let response = self.call(TheTraitRequest::Blub {}).await.unwrap();
-        match response {
-            TheTraitResponse::Blub(s) => s,
-            _ => panic!("Invalid response variant")
-        }
-    }
-}
-
-use tower::Service;
-
 fn use_as_trait(_s: &dyn TheTrait) {}
 
 fn main() {

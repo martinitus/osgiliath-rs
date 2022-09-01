@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use syn::{Field, Fields, FieldsNamed, FieldsUnnamed, ItemEnum, parse_macro_input, Pat, ReturnType, Token, TraitItem, TraitItemMethod, Variant, Visibility};
+use syn::{Field, Fields, FieldsNamed, FieldsUnnamed, ItemEnum, parse_macro_input, Pat, ReturnType, Token, TraitItem, TraitItemMethod, Type, Variant, Visibility};
 use quote::{format_ident, quote};
 use syn::ItemTrait;
 use syn::{Ident};
@@ -211,6 +211,108 @@ fn trait_service_definition_and_impl_tokens(item: &ItemTrait) -> proc_macro2::To
     }
 }
 
+fn service_impls_trait_tokens(item: &ItemTrait) -> proc_macro2::TokenStream {
+    let trait_ident = &item.ident;
+    let request_ident = Ident::new(&format!("{}Request", trait_ident.to_string()), trait_ident.span());
+    let response_ident = Ident::new(&format!("{}Response", trait_ident.to_string()), trait_ident.span());
+
+    let methods: Vec<proc_macro2::TokenStream> = item.items.iter()
+        .filter_map(|i| match i {
+            TraitItem::Method(method) => Some(method),
+            _ => None
+        })
+        .map(
+            |method| {
+                let method_ident = &method.sig.ident;
+                let variant_ident = snake_to_pascal(&method.sig.ident);
+                let args: Vec<&Ident> = method.sig.inputs.iter()
+                    .filter_map(
+                        |arg| match arg {
+                            Typed(a) => {
+                                match &*a.pat {
+                                    Pat::Ident(ident) => {
+                                        Some(ident)
+                                    }
+                                    _ => { panic!("Only 'simple' arguments are supported") }
+                                }
+                            }
+                            _ => None
+                        })
+                    .map(|arg| { &arg.ident })
+                    .collect();
+                let types: Vec<&Box<Type>> = method.sig.inputs.iter()
+                    .filter_map(
+                        |arg| match arg {
+                            Typed(a) => {
+                                match &*a.pat {
+                                    Pat::Ident(_) => {
+                                        Some(&a.ty)
+                                    }
+                                    _ => { panic!("Only 'simple' arguments are supported") }
+                                }
+                            }
+                            _ => None
+                        })
+                    .collect();
+
+
+                match &method.sig.output {
+                    ReturnType::Default => {
+                        quote! {
+                            async fn #method_ident(&mut self, #(#args: #types),*) {
+                                let response = self.call(#request_ident::#variant_ident { #(#args),* }).await.unwrap();
+                                match response {
+                                    #response_ident::#variant_ident {} => (),
+                                    _ => panic!("Invalid response variant")
+                                }
+                            }
+                        }
+                    }
+                    ReturnType::Type(_, ty) => {
+                        quote! {
+                          async fn #method_ident(&mut self, #(#args: #types),*) -> #ty {
+                                let response = self.call(#request_ident::#variant_ident {#(#args),*}).await.unwrap();
+                                match response {
+                                    #response_ident::#variant_ident(s) => s,
+                                    _ => panic!("Invalid response variant")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        .collect();
+
+    // vec![
+    //     quote! {
+    //             async fn bla(&mut self, value1: String, value2: SomeStruct) {
+    //                 let response = self.call(TheTraitRequest::Bla { value1, value2 }).await.unwrap();
+    //                 match response {
+    //                     TheTraitResponse::Bla {} => (),
+    //                     _ => panic!("Invalid response variant")
+    //                 }
+    //             }
+    //         },
+    //     quote! {
+    //             async fn blub(&mut self) -> SomeStruct {
+    //                 let response = self.call(TheTraitRequest::Blub {}).await.unwrap();
+    //                 match response {
+    //                     TheTraitResponse::Blub(s) => s,
+    //                     _ => panic!("Invalid response variant")
+    //                 }
+    //             }
+    //         },
+    // ];
+
+    quote! {
+        #[async_trait::async_trait]
+        impl<T> #trait_ident for T where T: tower::Service<#request_ident, Response=#response_ident> + Send, T::Error: Debug, T::Future: Send {
+            #(#methods)*
+        }
+    }
+}
+
 #[proc_macro_attribute]
 pub fn tower_service(args: TokenStream, input: TokenStream) -> TokenStream {
     let _ = args; // todo: any reasonable arguments to parameterize the generated code?
@@ -218,6 +320,7 @@ pub fn tower_service(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let (request_enum, response_enum) = enums(&item);
     let trait_service_definition_and_impl = trait_service_definition_and_impl_tokens(&item);
+    let service_impls_trait = service_impls_trait_tokens(&item);
 
     TokenStream::from(quote! {
         #request_enum // the enum for requests
@@ -227,6 +330,8 @@ pub fn tower_service(args: TokenStream, input: TokenStream) -> TokenStream {
         #item // the original trait definition
 
         #trait_service_definition_and_impl
+
+        #service_impls_trait
     })
 }
 
