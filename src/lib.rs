@@ -60,18 +60,7 @@ fn response_variants(methods: &Vec<&TraitItemMethod>) -> Punctuated<Variant, Tok
     for &method in methods {
         let mut fields: Punctuated<Field, Token![,]> = Punctuated::new();
         match &method.sig.output {
-            ReturnType::Default => {
-                // for functions without response, we use an explicit Unit type,
-                // because that allows to directly pack the Unit return value into the enum
-                // just as with the other return types
-                // fields.push(Field {
-                //     attrs: vec![],
-                //     vis: Visibility::Inherited,
-                //     ident: None,
-                //     colon_token: None,
-                //     ty: *b.clone(),
-                // });
-            }
+            ReturnType::Default => {}
             ReturnType::Type(_, b) => {
                 fields.push(Field {
                     attrs: vec![],
@@ -181,7 +170,7 @@ fn trait_service_definition_and_impl_tokens(item: &ItemTrait) -> proc_macro2::To
         pub struct #trait_service_ident(std::sync::Arc<futures::lock::Mutex<dyn #trait_ident>>);
 
         impl #trait_service_ident {
-            fn new(impl_: impl #trait_ident + 'static) -> Self {
+            pub fn new(impl_: impl #trait_ident + 'static) -> Self {
                 Self { 0: std::sync::Arc::new(futures::lock::Mutex::new(impl_)) }
             }
         }
@@ -283,27 +272,6 @@ fn service_impls_trait_tokens(item: &ItemTrait) -> proc_macro2::TokenStream {
             }
         )
         .collect();
-
-    // vec![
-    //     quote! {
-    //             async fn bla(&mut self, value1: String, value2: SomeStruct) {
-    //                 let response = self.call(TheTraitRequest::Bla { value1, value2 }).await.unwrap();
-    //                 match response {
-    //                     TheTraitResponse::Bla {} => (),
-    //                     _ => panic!("Invalid response variant")
-    //                 }
-    //             }
-    //         },
-    //     quote! {
-    //             async fn blub(&mut self) -> SomeStruct {
-    //                 let response = self.call(TheTraitRequest::Blub {}).await.unwrap();
-    //                 match response {
-    //                     TheTraitResponse::Blub(s) => s,
-    //                     _ => panic!("Invalid response variant")
-    //                 }
-    //             }
-    //         },
-    // ];
 
     quote! {
         #[async_trait::async_trait]
