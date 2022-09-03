@@ -175,6 +175,16 @@ fn trait_service_definition_and_impl_tokens(item: &ItemTrait) -> proc_macro2::To
             }
         }
 
+        impl PartialEq for #trait_service_ident{
+            fn eq(&self, other: &Self) -> bool {
+                // compare thin pointers
+                // https://stackoverflow.com/questions/67109860/how-to-compare-trait-objects-within-an-arc
+                let a = &*self as *const _ as *const ();
+                let b= &*other as *const _ as *const ();
+                return a == b
+            }
+        }
+
         impl tower::Service<#request_ident> for #trait_service_ident {
             type Response = #response_ident;
             type Error = ();
@@ -275,7 +285,7 @@ fn service_impls_trait_tokens(item: &ItemTrait) -> proc_macro2::TokenStream {
 
     quote! {
         #[async_trait::async_trait]
-        impl<T> #trait_ident for T where T: tower::Service<#request_ident, Response=#response_ident> + Send, T::Error: Debug, T::Future: Send {
+        impl<T> #trait_ident for T where T: tower::Service<#request_ident, Response=#response_ident> + Send, T::Error: std::fmt::Debug, T::Future: Send {
             #(#methods)*
         }
     }
@@ -333,6 +343,14 @@ mod tests {
     fn test_service_implements_trait() {
         let t = trybuild::TestCases::new();
         t.pass("tests/05-tower-service-implements-trait.rs");
+    }
+
+    #[test]
+    fn test_service_partial_equality() {
+        let t = trybuild::TestCases::new();
+        // fixme:Not sure if having this feature is a good idea. but it is nice when using a service
+        // In yew properties.
+        t.pass("tests/06-service-partial-equality.rs");
     }
     // #[test]
 // fn test_invalid_macro_order() {

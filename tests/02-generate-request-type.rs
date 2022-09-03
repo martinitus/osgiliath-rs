@@ -2,12 +2,12 @@ use osgiliath::tower_service;
 use async_trait::async_trait;
 
 
-struct SomeStruct {
+pub struct SomeStruct {
     value: usize,
 }
 
 #[tower_service] // includes #[async_trait]
-trait TheTrait: Send {
+pub trait TheTrait: Send {
     async fn bla(&mut self, value1: String, value2: SomeStruct);
     async fn blub(&mut self) -> SomeStruct;
 }
